@@ -55,6 +55,17 @@ void loop() {
       digitalWrite(redLED, LOW);    // Turn off Red LED
     }
   }
+  
+  // Add this: If no serial data received for 2 seconds, assume no face detected
+  static unsigned long lastMessageTime = 0;
+  if (millis() - lastMessageTime > 2000) {
+    digitalWrite(redLED, HIGH);   // Turn on Red LED
+    digitalWrite(greenLED, LOW);  // Turn off Green LED
+    displayMessage("No Face");    // Display "No Face" message
+  }
+  if (Serial.available()) {
+    lastMessageTime = millis();
+  }
 }
 
 // Function to display message on the OLED
@@ -67,7 +78,7 @@ void displayMessage(String msg) {
   display.display();                // Update the display
 }
 
-// Resources for further learning:
+// Resources:
 // 1. Arduino Serial Communication: https://www.arduino.cc/reference/en/language/functions/communication/serial/
 // 2. Adafruit SSD1306 Library: https://github.com/adafruit/Adafruit_SSD1306
 // 3. Adafruit GFX Library: https://learn.adafruit.com/adafruit-gfx-graphics-library
