@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 from PIL import Image
 import pickle
+import matplotlib.pyplot as plt
 
 def getData():
     label_id = {}  # Dictionary to store label-to-id mappings
@@ -10,7 +11,9 @@ def getData():
     face_label = []  # List to store corresponding face labels
     current_id = 0
     # Load the Haar Cascade classifier for face detection
-    cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+    cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_alt.xml')
+    if cascade.empty():
+        raise IOError("Unable to load the face cascade classifier xml file")
 
     # Get the directory of the current script
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -26,6 +29,7 @@ def getData():
         print(f"Directory does not exist: {my_face_dir}")
         print(f"Current working directory: {os.getcwd()}")
         print(f"Contents of current directory: {os.listdir()}")
+        print(f"Contents of image_data directory: {os.listdir(my_face_dir)}")
         return [], []
 
     # Recursively find all image files in the directory and its subdirectories
@@ -58,7 +62,7 @@ def getData():
         image_array = np.array(pil_image, "uint8")  # convert image to numpy array
 
         # Detect faces in the image
-        faces = cascade.detectMultiScale(image_array, scaleFactor=1.1, minNeighbors=5)
+        faces = cascade.detectMultiScale(image_array, scaleFactor=1.1, minNeighbors=3)
 
         if len(faces) == 0:
             print(f"No faces detected in {path}")
@@ -74,25 +78,33 @@ def getData():
 
     return face_train, face_label
 
-# Create a LBPH Face Recognizer
-recognizer = cv2.face.LBPHFaceRecognizer_create()
+def train_recognizer():
+    try:
+        recognizer = cv2.face.LBPHFaceRecognizer_create()
+    except AttributeError:
+        print("LBPHFaceRecognizer is not available. Please ensure opencv-contrib-python is installed.")
+        # Handle the error or exit the program
 
-# Get the training data
-faces, ids = getData()
+    # Get the training data
+    faces, ids = getData()
 
-# Debugging: Print the number of faces and ids collected
-print(f"Number of faces detected: {len(faces)}")
-print(f"Number of IDs detected: {len(ids)}")
+    # Debugging: Print the number of faces and ids collected
+    print(f"Number of faces detected: {len(faces)}")
+    print(f"Number of IDs detected: {len(ids)}")
 
-if len(faces) == 0 or len(ids) == 0:
-    print("No training data found. Ensure that images contain faces and are in the correct directory.")
-else:
-    # Train the recognizer
-    recognizer.train(faces, np.array(ids))
-    # Save the trained model
-    recognizer.save("trainer.yml")
+    if len(faces) == 0 or len(ids) == 0:
+        print("No training data found. Ensure that images contain faces and are in the correct directory.")
+    else:
+        # Train the recognizer
+        recognizer.train(faces, np.array(ids))
+        # Save the trained model
+        recognizer.save("trainer.yml")
+        print("Training completed and model saved.")
 
-# Resources for further learning:
+if __name__ == "__main__":
+    train_recognizer()
+
+# Resources:
 # 1. OpenCV Face Recognition: https://docs.opencv.org/3.4/da/d60/tutorial_face_main.html
 # 2. LBPH Face Recognizer: https://docs.opencv.org/3.4/df/d25/classcv_1_1face_1_1LBPHFaceRecognizer.html
 # 3. Face Recognition with Python: https://realpython.com/face-recognition-with-python/

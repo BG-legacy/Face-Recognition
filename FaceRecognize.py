@@ -2,28 +2,23 @@ import cv2
 import pickle
 import logging
 import os
-import serial.tools.list_ports
-from serial import Serial
+import serial
 import time
 
 # Configure logging to track events and errors
 logging.basicConfig(level=logging.INFO)
 
 # Constants for file paths and face recognition parameters
-CASCADE_PATH = "haarcascade_frontalface_default.xml"
-TRAINER_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "trainer.yml")
+CASCADE_PATH = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+TRAINER_PATH = "trainer.yml"
 LABELS_PATH = "labels.pickle"
 CONFIDENCE_THRESHOLD_MIN = 20
-CONFIDENCE_THRESHOLD_MAX = 115
+CONFIDENCE_THRESHOLD_MAX = 85
+ARDUINO_PORT = '/dev/cu.usbmodem1101'  # Updated to correct port name
+BAUD_RATE = 9600
 
-# Initialize serial communication with Arduino
-# Note: Replace '/dev/tty.usbmodem2101' with your actual port
-arduino = Serial('/dev/tty.usbmodem2101', 9600)
-
-# Give time for Arduino to reset (optional)
-time.sleep(2)
-
-print("Connected to Arduino!")
+# Initialize video capture from default camera
+video = cv2.VideoCapture(0)
 
 try:
     # Load the Haar Cascade Classifier for face detection
@@ -33,7 +28,10 @@ try:
 
     # Create and load the LBPH Face Recognizer
     recognise = cv2.face.LBPHFaceRecognizer_create()
-    recognise.read(TRAINER_PATH)
+    try:
+        recognise.read(TRAINER_PATH)
+    except cv2.error as e:
+        print(f"Error loading recognizer model: {e}")
 
     # Load labels from pickle file
     with open(LABELS_PATH, 'rb') as f:
@@ -41,9 +39,12 @@ try:
         labels = {v: k for k, v in og_label.items()}
     logging.info(f"Loaded labels: {labels}")
 
-    # Initialize video capture from default camera
-    video = cv2.VideoCapture(0)
+    # Initialize Arduino serial connection
+    arduino = serial.Serial(ARDUINO_PORT, BAUD_RATE, timeout=1)
+    time.sleep(2)  # Wait for Arduino to initialize
+    logging.info("Arduino connection established")
 
+    # Fix: Move the while loop inside the try block (fix indentation)
     while True:
         # Capture frame-by-frame
         check, frame = video.read()
@@ -53,8 +54,21 @@ try:
 
         # Convert frame to grayscale for face detection
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        # Detect faces in the frame
-        faces = cascade.detectMultiScale(gray, scaleFactor=1.2, minNeighbors=5)
+        # Detect faces in the frame with stricter parameters
+        faces = cascade.detectMultiScale(
+            gray, 
+            scaleFactor=1.1,    # Decreased from 1.2 for more precise detection
+            minNeighbors=8,     # Increased from 5 for stricter detection
+            minSize=(30, 30)    # Add minimum face size requirement
+        )
+
+        # Add this: If no faces detected, send message to Arduino
+        if len(faces) == 0 and arduino:
+            try:
+                arduino.write("User not identified\n".encode())
+                logging.info("No face detected")
+            except serial.SerialException as e:
+                logging.error(f"Failed to send data to Arduino: {e}")
 
         for x, y, w, h in faces:
             # Extract the face ROI (Region of Interest)
@@ -69,21 +83,18 @@ try:
                 logging.info(f"Recognized: {name} (ID: {ID}, Confidence: {conf})")
 
                 # Send message to Arduino
-                try:
-                    arduino.write((message + '\n').encode())
-                    arduino.flush()  # Ensure the message is sent immediately
-                except serial.SerialException as e:
-                    logging.error(f"Failed to send message to Arduino: {e}")
+                if arduino:
+                    try:
+                        arduino.write(f"{message}\n".encode())
+                        logging.info(f"Sent to Arduino: {message}")
+                    except serial.SerialException as e:
+                        logging.error(f"Failed to send data to Arduino: {e}")
 
                 # Draw the name on the frame
                 cv2.putText(frame, name, (x-10, y-10), cv2.FONT_HERSHEY_COMPLEX, 1, (18,5,255), 2, cv2.LINE_AA)
             else:
                 # If confidence is low, send "User not identified" to Arduino
-                try:
-                    arduino.write("User not identified\n".encode())
-                    arduino.flush()
-                except serial.SerialException as e:
-                    logging.error(f"Failed to send message to Arduino: {e}")
+                pass  # Commented Arduino code here
 
             # Draw rectangle around the face
             cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 255), 4)
@@ -94,6 +105,9 @@ try:
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
+except serial.SerialException as e:
+    logging.error(f"Failed to connect to Arduino: {e}")
+    arduino = None
 except IOError as e:
     logging.error(f"File error: {e}")
 except Exception as e:
@@ -102,7 +116,8 @@ finally:
     # Clean up resources
     video.release()
     cv2.destroyAllWindows()
-    arduino.close()
+    if arduino:
+        arduino.close()
 
 # Resources for further learning:
 # 1. OpenCV Face Recognition: https://docs.opencv.org/3.4/da/d60/tutorial_face_main.html
