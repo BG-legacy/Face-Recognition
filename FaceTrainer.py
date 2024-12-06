@@ -61,16 +61,68 @@ def getData():
         pil_image = Image.open(path).convert("L")  # convert image to grayscale
         image_array = np.array(pil_image, "uint8")  # convert image to numpy array
 
-        # Detect faces in the image
-        faces = cascade.detectMultiScale(image_array, scaleFactor=1.1, minNeighbors=3)
+        # Enhanced preprocessing pipeline
+        def preprocess_image(image_array):
+            # Enhance contrast
+            image_array = cv2.equalizeHist(image_array)
+            
+            # Apply bilateral filter to reduce noise while preserving edges
+            image_array = cv2.bilateralFilter(image_array, 9, 75, 75)
+            
+            # Normalize the image
+            image_array = cv2.normalize(image_array, None, 0, 255, cv2.NORM_MINMAX)
+            
+            # Apply CLAHE (Contrast Limited Adaptive Histogram Equalization)
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+            image_array = clahe.apply(image_array)
+            
+            return image_array
 
-        if len(faces) == 0:
-            print(f"No faces detected in {path}")
-        else:
-            for (x, y, w, h) in faces:
-                # Extract the face region and add to training data
-                face_train.append(image_array[y:y + h, x:x + w])
-                face_label.append(ID)
+        # Improved face detection parameters
+        faces = cascade.detectMultiScale(
+            image_array,
+            scaleFactor=1.1,
+            minNeighbors=8,       # Increased to reduce false positives
+            minSize=(100, 100),   # Increased minimum face size
+            maxSize=(500, 500),   # Maximum face size
+            flags=cv2.CASCADE_SCALE_IMAGE
+        )
+
+        # Add face validation function
+        def is_valid_face(face_roi):
+            # Check aspect ratio
+            height, width = face_roi.shape
+            aspect_ratio = width / height
+            if not (0.5 <= aspect_ratio <= 1.5):
+                return False
+            
+            # Check minimum contrast
+            min_val, max_val, _, _ = cv2.minMaxLoc(face_roi)
+            if (max_val - min_val) < 30:
+                return False
+            
+            # Check face symmetry
+            left_half = face_roi[:, :width//2]
+            right_half = cv2.flip(face_roi[:, width//2:], 1)
+            symmetry_score = cv2.matchTemplate(left_half, right_half, cv2.TM_CCOEFF_NORMED)[0][0]
+            if symmetry_score < 0.5:  # Adjust threshold as needed
+                return False
+            
+            return True
+
+        # Process only valid faces
+        valid_faces = []
+        for (x, y, w, h) in faces:
+            face_roi = image_array[y:y+h, x:x+w]
+            if is_valid_face(face_roi):
+                valid_faces.append((x, y, w, h))
+        
+        for (x, y, w, h) in valid_faces:
+            roi = image_array[y:y + h, x:x + w]
+            processed_face = preprocess_image(roi)
+            processed_face = cv2.resize(processed_face, (200, 200))
+            face_train.append(processed_face)
+            face_label.append(ID)
 
     # Save the label-to-id mappings
     with open("labels.pickle", "wb") as f:
@@ -78,12 +130,34 @@ def getData():
 
     return face_train, face_label
 
+def augment_face(face_image):
+    augmented_faces = []
+    
+    # Original image
+    augmented_faces.append(face_image)
+    
+    # Slightly rotated versions
+    for angle in [-5, 5]:
+        matrix = cv2.getRotationMatrix2D((face_image.shape[1]/2, face_image.shape[0]/2), angle, 1.0)
+        rotated = cv2.warpAffine(face_image, matrix, (face_image.shape[1], face_image.shape[0]))
+        augmented_faces.append(rotated)
+    
+    # Slightly scaled versions
+    for scale in [0.95, 1.05]:
+        scaled = cv2.resize(face_image, None, fx=scale, fy=scale)
+        scaled = cv2.resize(scaled, (face_image.shape[1], face_image.shape[0]))
+        augmented_faces.append(scaled)
+    
+    return augmented_faces
+
 def train_recognizer():
-    try:
-        recognizer = cv2.face.LBPHFaceRecognizer_create()
-    except AttributeError:
-        print("LBPHFaceRecognizer is not available. Please ensure opencv-contrib-python is installed.")
-        # Handle the error or exit the program
+    recognizer = cv2.face.LBPHFaceRecognizer_create(
+        radius=2,           # Increase radius for more detail
+        neighbors=12,       # More sampling points
+        grid_x=10,         # More cells horizontally
+        grid_y=10,         # More cells vertically
+        threshold=80.0     # Lower threshold for stricter matching
+    )
 
     # Get the training data
     faces, ids = getData()

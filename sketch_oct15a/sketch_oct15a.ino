@@ -50,32 +50,32 @@ void loop() {
     if (message == "User not identified") {
       digitalWrite(redLED, HIGH);   // Turn on Red LED
       digitalWrite(greenLED, LOW);  // Turn off Green LED
-    } else if (message == "Welcome Home Boss") {
+    } else if (message == "Welcome Home") {
       digitalWrite(greenLED, HIGH); // Turn on Green LED
       digitalWrite(redLED, LOW);    // Turn off Red LED
+    } else if (message == "No Face") {
+      digitalWrite(redLED, HIGH);   // Turn on Red LED
+      digitalWrite(greenLED, LOW);  // Turn off Green LED
     }
-  }
-  
-  // Add this: If no serial data received for 2 seconds, assume no face detected
-  static unsigned long lastMessageTime = 0;
-  if (millis() - lastMessageTime > 2000) {
-    digitalWrite(redLED, HIGH);   // Turn on Red LED
-    digitalWrite(greenLED, LOW);  // Turn off Green LED
-    displayMessage("No Face");    // Display "No Face" message
-  }
-  if (Serial.available()) {
-    lastMessageTime = millis();
   }
 }
 
-// Function to display message on the OLED
+// Function to display message on the OLED with better formatting
 void displayMessage(String msg) {
   display.clearDisplay();           // Clear the display buffer
-  display.setTextSize(2);           // Set text size to 2
-  display.setTextColor(SSD1306_WHITE); // Set text color to white
-  display.setCursor(0, 20);         // Set cursor position
-  display.println(msg);             // Print the message
-  display.display();                // Update the display
+  display.setTextSize(2);          // Larger text size for better visibility
+  display.setTextColor(SSD1306_WHITE);
+  
+  // Center the text
+  int16_t x1, y1;
+  uint16_t w, h;
+  display.getTextBounds(msg, 0, 0, &x1, &y1, &w, &h);
+  int x = (SCREEN_WIDTH - w) / 2;
+  int y = (SCREEN_HEIGHT - h) / 2;
+  
+  display.setCursor(x, y);
+  display.println(msg);
+  display.display();
 }
 
 // Resources:
@@ -87,3 +87,4 @@ void displayMessage(String msg) {
 // 6. OLED Display Tutorial: https://randomnerdtutorials.com/guide-for-oled-display-with-arduino/
 // 7. LED Control with Arduino: https://www.arduino.cc/en/Tutorial/BuiltInExamples/Blink
 // 8. Arduino String Handling: https://www.arduino.cc/reference/en/language/variables/data-types/stringobject/
+

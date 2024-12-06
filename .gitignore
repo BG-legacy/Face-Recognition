@@ -1,3 +1,6 @@
 /image_data
 /labels.pickle
-/trainer.yml
+/trainer.yml.DS_Store
+__pycache__/
+myenv/
+Humans/

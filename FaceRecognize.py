@@ -12,9 +12,9 @@ logging.basicConfig(level=logging.INFO)
 CASCADE_PATH = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
 TRAINER_PATH = "trainer.yml"
 LABELS_PATH = "labels.pickle"
-CONFIDENCE_THRESHOLD_MIN = 20
-CONFIDENCE_THRESHOLD_MAX = 85
-ARDUINO_PORT = '/dev/cu.usbmodem1101'  # Updated to correct port name
+CONFIDENCE_THRESHOLD_MIN = 40
+CONFIDENCE_THRESHOLD_MAX = 95
+ARDUINO_PORT = '/dev/cu.usbmodem2101'
 BAUD_RATE = 9600
 
 # Initialize video capture from default camera
@@ -54,12 +54,13 @@ try:
 
         # Convert frame to grayscale for face detection
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        # Detect faces in the frame with stricter parameters
+        # Detect faces in the frame with improved parameters
         faces = cascade.detectMultiScale(
             gray, 
-            scaleFactor=1.1,    # Decreased from 1.2 for more precise detection
-            minNeighbors=8,     # Increased from 5 for stricter detection
-            minSize=(30, 30)    # Add minimum face size requirement
+            scaleFactor=1.05,    # Decreased for more precise detection (was 1.1)
+            minNeighbors=6,      # Balanced value for detection
+            minSize=(60, 60),    # Increased minimum face size
+            maxSize=(500, 500)   # Added maximum face size
         )
 
         # Add this: If no faces detected, send message to Arduino
@@ -71,30 +72,31 @@ try:
                 logging.error(f"Failed to send data to Arduino: {e}")
 
         for x, y, w, h in faces:
-            # Extract the face ROI (Region of Interest)
             face_save = gray[y:y+h, x:x+w]
-            # Predict the face using the trained recognizer
             ID, conf = recognise.predict(face_save)
 
-            if CONFIDENCE_THRESHOLD_MIN <= conf <= CONFIDENCE_THRESHOLD_MAX:
-                # If confidence is within acceptable range, get the name
+            # Improved confidence threshold logic
+            if conf >= CONFIDENCE_THRESHOLD_MAX:
+                name = "Unknown"
+                message = "User not identified"
+            elif conf <= CONFIDENCE_THRESHOLD_MIN:
                 name = labels.get(ID, "Unknown")
-                message = "Welcome Home Boss" if name != "Unknown" else "User not identified"
-                logging.info(f"Recognized: {name} (ID: {ID}, Confidence: {conf})")
-
-                # Send message to Arduino
-                if arduino:
-                    try:
-                        arduino.write(f"{message}\n".encode())
-                        logging.info(f"Sent to Arduino: {message}")
-                    except serial.SerialException as e:
-                        logging.error(f"Failed to send data to Arduino: {e}")
-
-                # Draw the name on the frame
-                cv2.putText(frame, name, (x-10, y-10), cv2.FONT_HERSHEY_COMPLEX, 1, (18,5,255), 2, cv2.LINE_AA)
+                message = "Welcome Home Boss"
             else:
-                # If confidence is low, send "User not identified" to Arduino
-                pass  # Commented Arduino code here
+                # Confidence is between MIN and MAX - show confidence level
+                name = f"{labels.get(ID, 'Unknown')} ({100-conf:.1f}%)"
+                message = "Welcome Home Boss"
+
+            # Send message to Arduino
+            if arduino:
+                try:
+                    arduino.write(f"{message}\n".encode())
+                    logging.info(f"Sent to Arduino: {message}")
+                except serial.SerialException as e:
+                    logging.error(f"Failed to send data to Arduino: {e}")
+
+            # Draw the name on the frame
+            cv2.putText(frame, name, (x-10, y-10), cv2.FONT_HERSHEY_COMPLEX, 1, (18,5,255), 2, cv2.LINE_AA)
 
             # Draw rectangle around the face
             cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 255), 4)
